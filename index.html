@@ -3,129 +3,162 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Wake Up Challenge</title>
+  <title>Alarm Task</title>
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #f9f9f9;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       margin: 0;
-      padding: 1rem;
-    }
-    .card {
-      background: white;
       padding: 2rem;
-      border-radius: 1.5rem;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-      text-align: center;
-      max-width: 400px;
-      width: 100%;
+      background: #f9f9f9;
+      color: #333;
+      max-width: 500px;
+      margin: auto;
     }
-    input[type="number"] {
-      font-size: 1.25rem;
+    h1 {
+      text-align: center;
+      font-size: 1.6rem;
+    }
+    #task, .question {
+      margin-top: 2rem;
+      font-size: 1.3rem;
+    }
+    input {
+      font-size: 1.2rem;
       padding: 0.5rem;
-      margin-top: 1rem;
       width: 100%;
       box-sizing: border-box;
     }
     button {
       margin-top: 1rem;
-      padding: 0.75rem 1.5rem;
+      padding: 0.7rem;
       font-size: 1rem;
-      border: none;
-      background-color: #007AFF;
+      width: 100%;
+      background: #007aff;
       color: white;
-      border-radius: 0.75rem;
-      cursor: pointer;
+      border: none;
+      border-radius: 6px;
     }
-    .hidden {
-      display: none;
+    .hint {
+      font-size: 1rem;
+      color: #555;
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2 id="prompt">Loading...</h2>
-    <input type="number" id="answer" inputmode="numeric" />
-    <button onclick="submitAnswer()">Submit</button>
-    <p id="feedback"></p>
-  </div>
+  <h1>Complete Your Task</h1>
+  <div id="task">Loading...</div>
 
   <script>
-    let questions = [];
-    let currentIndex = 0;
+    const backendURL = "https://alarmclock-dopk.onrender.com";
 
-    function getRandomInt(min, max, notDivisibleBy5 = false) {
-      let num;
+    function randomInt(min, max, filterFn = () => true) {
+      let x;
       do {
-        num = Math.floor(Math.random() * (max - min + 1)) + min;
-      } while (notDivisibleBy5 && num % 5 === 0);
-      return num;
+        x = Math.floor(Math.random() * (max - min + 1)) + min;
+      } while (!filterFn(x));
+      return x;
     }
 
     function generateQuestion() {
-      const type = ["add", "sub", "mul"][Math.floor(Math.random() * 3)];
+      const ops = ["+", "-", "*"];
+      const op = ops[Math.floor(Math.random() * ops.length)];
 
-      if (type === "add" || type === "sub") {
-        let a = getRandomInt(51, 999, true);
-        let b = getRandomInt(51, 999, true);
-        if (type === "sub" && b > a) [a, b] = [b, a]; // Ensure non-negative
-        return {
-          question: `${a} ${type === "add" ? "+" : "−"} ${b}`,
-          answer: type === "add" ? a + b : a - b
-        };
-      } else {
-        let a = getRandomInt(10, 50);
-        let b;
-        do {
-          b = getRandomInt(2, 50);
-        } while (b > 10 && b % 5 !== 0);
-        return {
-          question: `${a} × ${b}`,
-          answer: a * b
-        };
+      let a, b;
+      if (op === "+") {
+        a = randomInt(51, 999, n => n % 5 !== 0);
+        b = randomInt(51, 999, n => n % 5 !== 0);
+      } else if (op === "-") {
+        a = randomInt(51, 999, n => n % 5 !== 0);
+        b = randomInt(51, a - 1, n => n % 5 !== 0); // b < a to avoid negatives
+      } else if (op === "*") {
+        a = randomInt(10, 50);
+        const bPool = Array.from({ length: 9 }, (_, i) => i + 2)
+          .concat([15, 20, 25, 30, 35, 40, 45, 50]);
+        b = bPool[Math.floor(Math.random() * bPool.length)];
       }
+
+      const expression = `${a} ${op} ${b}`;
+      const answer = eval(expression);
+      return { question: expression, answer };
     }
 
-    function loadQuestions() {
-      for (let i = 0; i < 3; i++) {
-        questions.push(generateQuestion());
-      }
-      showQuestion();
+    async function submitComplete() {
+      await fetch(`${backendURL}/mark-complete`, { method: "POST" });
+      document.getElementById("task").innerHTML = `<p>✅ Task complete!</p>`;
     }
 
-    function showQuestion() {
-      if (currentIndex < questions.length) {
-        document.getElementById("prompt").innerText = questions[currentIndex].question;
-        document.getElementById("answer").value = "";
-        document.getElementById("feedback").innerText = "";
-      } else {
-        document.getElementById("prompt").innerText = "✅ Task complete!";
-        document.querySelector("input").classList.add("hidden");
-        document.querySelector("button").classList.add("hidden");
+    function renderMathTask() {
+      const taskDiv = document.getElementById("task");
+      const questions = [generateQuestion(), generateQuestion(), generateQuestion()];
+      let current = 0;
 
-        fetch("https://alarmclock-dopk.onrender.com/mark-complete", {
-          method: "POST"
+      function askNext() {
+        if (current >= questions.length) {
+          submitComplete();
+          return;
+        }
+
+        const { question, answer } = questions[current];
+        taskDiv.innerHTML = `
+          <div class="question">
+            <p>Question ${current + 1}: <strong>${question}</strong></p>
+            <input id="answer" type="number" inputmode="numeric" />
+            <button id="submit">Submit</button>
+          </div>
+        `;
+
+        document.getElementById("submit").onclick = () => {
+          const userAnswer = Number(document.getElementById("answer").value);
+          if (userAnswer === answer) {
+            current++;
+            askNext();
+          } else {
+            alert("Incorrect. Try again.");
+          }
+        };
+      }
+
+      askNext();
+    }
+
+    function renderQRTask(hint) {
+      const taskDiv = document.getElementById("task");
+
+      taskDiv.innerHTML = `
+        <p class="hint">QR Hint: <strong>${hint}</strong></p>
+        <input type="text" id="qrValue" placeholder="Scan QR and paste value" />
+        <button id="verify">Verify QR</button>
+      `;
+
+      document.getElementById("verify").onclick = async () => {
+        const value = document.getElementById("qrValue").value.trim();
+        if (!value) return alert("Please enter a value.");
+
+        const res = await fetch(`${backendURL}/qr-verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value })
         });
+
+        const result = await res.json();
+        if (result.ok) {
+          document.getElementById("task").innerHTML = `<p>✅ QR verified!</p>`;
+        } else {
+          alert(result.message || "QR verification failed.");
+        }
+      };
+    }
+
+    async function main() {
+      const task = await fetch(`${backendURL}/task-type`).then(r => r.json());
+      if (task.type === "math") {
+        renderMathTask();
+      } else if (task.type === "qr") {
+        renderQRTask(task.hint || "No hint provided.");
       }
     }
 
-    function submitAnswer() {
-      const userAnswer = parseInt(document.getElementById("answer").value);
-      const correct = questions[currentIndex].answer;
-      if (userAnswer === correct) {
-        currentIndex++;
-        showQuestion();
-      } else {
-        document.getElementById("feedback").innerText = "❌ Incorrect, try again.";
-      }
-    }
-
-    loadQuestions();
+    main();
   </script>
 </body>
 </html>
