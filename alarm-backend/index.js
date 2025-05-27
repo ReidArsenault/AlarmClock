@@ -56,7 +56,7 @@ app.get("/task-status", (req, res) => {
   fs.readFile(FILE_PATH, "utf8", (err, fileData) => {
     if (err) {
       console.warn("⚠️ No task-status.json found:", err.message);
-      return res.json({ complete: false });
+      return res.json({ complete: false, date: null });
     }
     try {
       const { date } = JSON.parse(fileData);
@@ -64,7 +64,7 @@ app.get("/task-status", (req, res) => {
       res.json({ complete, date });
     } catch (e) {
       console.error("❌ Corrupt task-status.json:", e.message);
-      res.json({ complete: false });
+      res.json({ complete: false, date: null });
     }
   });
 });
