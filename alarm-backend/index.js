@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
+import cors from "cors";
 
 // Setup __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -19,7 +20,7 @@ const QR_TASK_PATH = path.join(__dirname, "qr-task.json");
 
 // Middleware
 app.use(express.json());
-
+app.use(cors());
 /**
  * Get today's date in EST (YYYY-MM-DD)
  */
