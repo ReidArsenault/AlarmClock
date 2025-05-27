@@ -61,7 +61,7 @@ app.get("/task-status", (req, res) => {
     try {
       const { date } = JSON.parse(fileData);
       const complete = date === getToday();
-      res.json({ complete });
+      res.json({ complete, date });
     } catch (e) {
       console.error("❌ Corrupt task-status.json:", e.message);
       res.json({ complete: false });
