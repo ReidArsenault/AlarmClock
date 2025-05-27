@@ -34,7 +34,16 @@ initializeStatusFile();
 
 // Returns today's date in YYYY-MM-DD format
 function getToday() {
-  return new Date().toISOString().slice(0, 10);
+  // Convert current time to America/New_York time zone
+  const estDate = new Date().toLocaleString("en-US", {
+    timeZone: "America/New_York",
+  });
+  const [month, day, year] = estDate.split(",")[0].split("/");
+
+  // Ensure two-digit month/day formatting
+  const pad = (n) => n.padStart(2, "0");
+
+  return `${year}-${pad(month)}-${pad(day)}`;
 }
 
 // POST /mark-complete → store today's completion date
