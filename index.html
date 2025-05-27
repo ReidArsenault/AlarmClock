@@ -43,7 +43,7 @@
       font-size: 1rem;
       color: #555;
     }
-    #reader {
+    #qr-reader {
       width: 100%;
       margin-top: 1rem;
     }
@@ -74,10 +74,11 @@
         b = randomInt(51, 999, n => n % 5 !== 0);
       } else if (op === "-") {
         a = randomInt(51, 999, n => n % 5 !== 0);
-        b = randomInt(51, a - 1, n => n % 5 !== 0); // b < a
+        b = randomInt(51, a - 1, n => n % 5 !== 0); // b < a to avoid negatives
       } else if (op === "*") {
         a = randomInt(10, 50);
-        const bPool = Array.from({ length: 9 }, (_, i) => i + 2).concat([15, 20, 25, 30, 35, 40, 45, 50]);
+        const bPool = Array.from({ length: 9 }, (_, i) => i + 2)
+          .concat([15, 20, 25, 30, 35, 40, 45, 50]);
         b = bPool[Math.floor(Math.random() * bPool.length)];
       }
 
@@ -130,51 +131,51 @@
 
       taskDiv.innerHTML = `
         <p class="hint">QR Hint: <strong>${hint}</strong></p>
-        <div id="reader"></div>
-        <p>Or paste QR value manually:</p>
-        <input type="text" id="qrValue" placeholder="Paste QR value" />
-        <button id="verify">Verify QR</button>
+        <div id="qr-reader"></div>
+        <p style="font-size:0.9rem; color:#777;">Ensure correct QR code is in view and hold steady.</p>
       `;
 
-      const reader = new Html5Qrcode("reader");
+      const reader = new Html5Qrcode("qr-reader");
+      let isScanning = true;
+      let lastScanTime = 0;
+
+      async function verifyQR(value) {
+        const now = Date.now();
+        if (!isScanning || now - lastScanTime < 3000) return; // 3 sec debounce
+        isScanning = false;
+        lastScanTime = now;
+
+        try {
+          const res = await fetch(`${backendURL}/qr-verify`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ value })
+          });
+          const result = await res.json();
+          if (result.ok) {
+            await reader.stop();
+            document.getElementById("task").innerHTML = `<p>✅ QR verified!</p>`;
+            await submitComplete();
+          } else {
+            alert(result.message || "QR verification failed.");
+            isScanning = true;
+          }
+        } catch (err) {
+          alert("Verification error.");
+          isScanning = true;
+        }
+      }
+
       reader.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: 250 },
         async (decodedText) => {
-          await verifyQR(decodedText, reader);
+          await verifyQR(decodedText);
         },
         error => {
-          // ignore scan errors
+          // Ignore decode errors silently
         }
-      ).catch(err => {
-        console.error("Camera failed:", err);
-      });
-
-      document.getElementById("verify").onclick = async () => {
-        const value = document.getElementById("qrValue").value.trim();
-        if (!value) return alert("Please enter a value.");
-        await verifyQR(value, reader);
-      };
-    }
-
-    async function verifyQR(value, reader) {
-      try {
-        const res = await fetch(`${backendURL}/qr-verify`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value })
-        });
-        const result = await res.json();
-        if (result.ok) {
-          reader?.stop();
-          document.getElementById("task").innerHTML = `<p>✅ QR verified!</p>`;
-          await submitComplete();
-        } else {
-          alert(result.message || "QR verification failed.");
-        }
-      } catch (err) {
-        alert("Verification error.");
-      }
+      );
     }
 
     async function main() {
