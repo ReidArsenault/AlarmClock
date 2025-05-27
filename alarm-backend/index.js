@@ -2,87 +2,137 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { randomUUID } from "crypto";
 
-// Required for __dirname in ES modules
+// Setup __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
-const FILE_PATH = path.join(__dirname, "task-status.json");
 
+// File paths
+const TASK_STATUS_PATH = path.join(__dirname, "task-status.json");
+const QR_LIST_PATH = path.join(__dirname, "qr-list.json");
+const QR_TASK_PATH = path.join(__dirname, "qr-task.json");
+
+// Middleware
 app.use(express.json());
 
-// Ensure task-status.json exists and is valid
-function initializeStatusFile() {
+/**
+ * Get today's date in EST (YYYY-MM-DD)
+ */
+function getTodayEST() {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const estOffsetMs = -5 * 60 * 60000;
+  const est = new Date(utc + estOffsetMs);
+  return est.toISOString().slice(0, 10);
+}
+
+/**
+ * Read a JSON file safely
+ */
+function safeReadJson(filePath, fallback = {}) {
   try {
-    if (!fs.existsSync(FILE_PATH)) {
-      fs.writeFileSync(FILE_PATH, JSON.stringify({ date: null }, null, 2));
-      console.log("🆕 Created missing task-status.json");
-    } else {
-      const raw = fs.readFileSync(FILE_PATH, "utf8");
-      JSON.parse(raw); // Throws if malformed
-    }
-  } catch (err) {
-    console.warn("⚠️ task-status.json was corrupted. Resetting.");
-    fs.writeFileSync(FILE_PATH, JSON.stringify({ date: null }, null, 2));
+    if (!fs.existsSync(filePath)) return fallback;
+    const raw = fs.readFileSync(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
   }
 }
 
-// Call at startup
-initializeStatusFile();
-
-// Returns today's date in YYYY-MM-DD format
-function getToday() {
-  // Convert current time to America/New_York time zone
-  const estDate = new Date().toLocaleString("en-US", {
-    timeZone: "America/New_York",
-  });
-  const [month, day, year] = estDate.split(",")[0].split("/");
-
-  // Ensure two-digit month/day formatting
-  const pad = (n) => n.padStart(2, "0");
-
-  return `${year}-${pad(month)}-${pad(day)}`;
+/**
+ * Write data to a JSON file
+ */
+function writeJson(filePath, data) {
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
-// POST /mark-complete → store today's completion date
-app.post("/mark-complete", (req, res) => {
-  const today = getToday();
-  const data = { date: today };
-  fs.writeFile(FILE_PATH, JSON.stringify(data, null, 2), (err) => {
-    if (err) {
-      console.error("❌ Error writing task-status.json:", err);
-      return res.status(500).send("Could not save status.");
-    }
-    console.log("✅ Task marked complete for", today);
-    res.sendStatus(200);
-  });
-});
+/**
+ * Assign or retrieve today's task
+ */
+function getOrAssignTodayTask() {
+  const today = getTodayEST();
+  let task = safeReadJson(QR_TASK_PATH);
 
-// GET /task-status → check if task was completed today
-app.get("/task-status", (req, res) => {
-  fs.readFile(FILE_PATH, "utf8", (err, fileData) => {
-    if (err) {
-      console.warn("⚠️ No task-status.json found:", err.message);
-      return res.json({ complete: false, date: null });
-    }
-    try {
-      const { date } = JSON.parse(fileData);
-      const complete = date === getToday();
-      res.json({ complete, date });
-    } catch (e) {
-      console.error("❌ Corrupt task-status.json:", e.message);
-      res.json({ complete: false, date: null });
-    }
-  });
-});
+  if (task.date !== today) {
+    const type = Math.random() < 0.5 ? "math" : "qr";
+    const newTask = { date: today, type };
 
-// Root status
+    if (type === "qr") {
+      const qrList = safeReadJson(QR_LIST_PATH, []);
+      if (qrList.length > 0) {
+        const picked = qrList[Math.floor(Math.random() * qrList.length)];
+        newTask.qr = { value: picked.value, hint: picked.hint };
+      }
+    }
+
+    writeJson(QR_TASK_PATH, newTask);
+    return newTask;
+  }
+
+  return task;
+}
+
+/**
+ * Check if today's task is complete
+ */
+function isTaskComplete() {
+  const status = safeReadJson(TASK_STATUS_PATH);
+  return status.date === getTodayEST();
+}
+
+// Routes
+
 app.get("/", (req, res) => {
   res.send("Alarm backend is running.");
 });
 
+app.get("/task-status", (req, res) => {
+  const complete = isTaskComplete();
+  const { date } = safeReadJson(TASK_STATUS_PATH, {});
+  res.json({ complete, date });
+});
+
+app.post("/mark-complete", (req, res) => {
+  const today = getTodayEST();
+  writeJson(TASK_STATUS_PATH, { date: today });
+  console.log("✅ Task marked complete for", today);
+  res.sendStatus(200);
+});
+
+app.get("/task-type", (req, res) => {
+  const task = getOrAssignTodayTask();
+  const response = { type: task.type };
+
+  if (task.type === "qr") {
+    response.hint = task.qr?.hint || "QR task assigned, but no hint.";
+  }
+
+  res.json(response);
+});
+
+app.post("/qr-verify", (req, res) => {
+  const task = getOrAssignTodayTask();
+  const { value } = req.body;
+
+  if (task.type !== "qr") {
+    return res.status(400).json({ ok: false, message: "Today's task is not QR." });
+  }
+
+  if (!value || value !== task.qr?.value) {
+    return res.status(403).json({ ok: false, message: "Incorrect QR code." });
+  }
+
+  writeJson(TASK_STATUS_PATH, { date: getTodayEST() });
+  console.log("✅ QR verified:", value);
+  res.json({ ok: true });
+});
+
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
