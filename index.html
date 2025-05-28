@@ -132,12 +132,13 @@
     taskDiv.innerHTML = `
       <p class="hint">QR Hint: <strong>${hint}</strong></p>
       <div id="qr-reader"></div>
-      <p style="font-size:0.9rem; color:#777;">Ensure correct QR code is in view and hold steady.</p>
+      <p id="qr-status" style="font-size:0.9rem; color:#777;">Waiting for scan...</p>
     `;
   
     const reader = new Html5Qrcode("qr-reader");
   
     async function verifyQR(value) {
+      document.getElementById("qr-status").textContent = "Verifying...";
       try {
         const res = await fetch(`${backendURL}/qr-verify`, {
           method: "POST",
@@ -151,26 +152,32 @@
           document.getElementById("task").innerHTML = `<p>✅ QR verified!</p>`;
           await submitComplete();
         } else {
-          alert(result.message || "QR verification failed.");
-          setTimeout(() => reader.resume(), 3000); // resume after delay
+          document.getElementById("qr-status").textContent = "Incorrect code. Retrying in 3 seconds...";
+          await reader.stop();
+          setTimeout(() => startScanner(), 3000);
         }
       } catch (err) {
-        alert("Verification error.");
-        setTimeout(() => reader.resume(), 3000);
+        document.getElementById("qr-status").textContent = "Error verifying. Retrying in 3 seconds...";
+        await reader.stop();
+        setTimeout(() => startScanner(), 3000);
       }
     }
   
-    reader.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: 250 },
-      (decodedText) => {
-        reader.pause(); // pause immediately on scan
-        verifyQR(decodedText);
-      },
-      error => {
-        // ignore decode errors silently
-      }
-    );
+    function startScanner() {
+      document.getElementById("qr-status").textContent = "Scanning...";
+      reader.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+        (decodedText) => {
+          verifyQR(decodedText);
+        },
+        (errorMessage) => {
+          // decode errors are ignored silently
+        }
+      );
+    }
+  
+    startScanner();
   }
 
     async function main() {
