@@ -126,57 +126,52 @@
       askNext();
     }
 
-    function renderQRTask(hint) {
-      const taskDiv = document.getElementById("task");
-
-      taskDiv.innerHTML = `
-        <p class="hint">QR Hint: <strong>${hint}</strong></p>
-        <div id="qr-reader"></div>
-        <p style="font-size:0.9rem; color:#777;">Ensure correct QR code is in view and hold steady.</p>
-      `;
-
-      const reader = new Html5Qrcode("qr-reader");
-      let isScanning = true;
-      let lastScanTime = 0;
-
-      async function verifyQR(value) {
-        const now = Date.now();
-        if (!isScanning || now - lastScanTime < 3000) return; // 3 sec debounce
-        isScanning = false;
-        lastScanTime = now;
-
-        try {
-          const res = await fetch(`${backendURL}/qr-verify`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ value })
-          });
-          const result = await res.json();
-          if (result.ok) {
-            await reader.stop();
-            document.getElementById("task").innerHTML = `<p>✅ QR verified!</p>`;
-            await submitComplete();
-          } else {
-            alert(result.message || "QR verification failed.");
-            isScanning = true;
-          }
-        } catch (err) {
-          alert("Verification error.");
-          isScanning = true;
+  function renderQRTask(hint) {
+    const taskDiv = document.getElementById("task");
+  
+    taskDiv.innerHTML = `
+      <p class="hint">QR Hint: <strong>${hint}</strong></p>
+      <div id="qr-reader"></div>
+      <p style="font-size:0.9rem; color:#777;">Ensure correct QR code is in view and hold steady.</p>
+    `;
+  
+    const reader = new Html5Qrcode("qr-reader");
+  
+    async function verifyQR(value) {
+      try {
+        const res = await fetch(`${backendURL}/qr-verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value })
+        });
+        const result = await res.json();
+  
+        if (result.ok) {
+          await reader.stop();
+          document.getElementById("task").innerHTML = `<p>✅ QR verified!</p>`;
+          await submitComplete();
+        } else {
+          alert(result.message || "QR verification failed.");
+          setTimeout(() => reader.resume(), 3000); // resume after delay
         }
+      } catch (err) {
+        alert("Verification error.");
+        setTimeout(() => reader.resume(), 3000);
       }
-
-      reader.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: 250 },
-        async (decodedText) => {
-          await verifyQR(decodedText);
-        },
-        error => {
-          // Ignore decode errors silently
-        }
-      );
     }
+  
+    reader.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      (decodedText) => {
+        reader.pause(); // pause immediately on scan
+        verifyQR(decodedText);
+      },
+      error => {
+        // ignore decode errors silently
+      }
+    );
+  }
 
     async function main() {
       const task = await fetch(`${backendURL}/task-type`).then(r => r.json());
